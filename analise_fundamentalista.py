@@ -128,6 +128,7 @@ class Relatorio:
         if self.tickers:
             df = df[df['TICKER'].isin(self.tickers)]
         df = df[df['DT_REFER'].dt.month==self.tri * 3]
+        df = df.sort_values(by = 'VERSAO', ascending = False).drop_duplicates(subset = 'CNPJ_CIA')
         return df
 
     def get_relatorio_completo(self):

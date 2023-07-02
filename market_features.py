@@ -1,6 +1,7 @@
 from analise_fundamentalista import AnaliseFundamentalista
 from b3apis import get_infos_ativo_detalhes
 from serie_historica import SerieHistorica
+from bcb import hist_selic
 
 import pandas as pd
 
@@ -31,7 +32,9 @@ class GeradorFeatures:
         
     def set_serie_historica(self):
         codes = self.get_code_ativos_b3()
-        codes = [code+'.SA' for code in codes]
+        codes = [code+'.SA' for code in codes if code[4:] in ['3', '4', '11']]
+        codes = sorted(codes)
+        codes = [code for i, code in enumerate(codes) if code[:4] not in [x[:4] for x in codes[:i]]]
         start = f'{self.ano}-01-01'
         self.sh = SerieHistorica(codes, start = start)
         
@@ -41,8 +44,9 @@ class GeradorFeatures:
         df = df[['DT_REFER', 'DT_RECEB', 'TICKER', 'SEGMENTO']]
         self.df_features = df
         
-    def _get_datas(self, campo = 'DT_RECEB'):
-        datas = self.af.get_relatorio(1).get_infos_relatorio_completo()[['TICKER', campo]]\
+    def _get_datas(self, campo = 'DT_RECEB', ant = False):
+        obj = self.af if not ant else self.af_ant
+        datas = obj.get_relatorio(1).get_infos_relatorio_completo()[['TICKER', campo]]\
             .assign(**{campo: lambda x: x[campo].astype(str)})
         datas = dict(datas.values)
         return datas
@@ -90,6 +94,20 @@ class GeradorFeatures:
         func = 'calcular'
         campo = expressao
         self._set_feature_cvm(func, params, campo, variacao)
+
+    def set_selic(self):
+        df_selic = hist_selic('anual')
+        df_selic = df_selic.reset_index().astype({'data':str})
+
+        datas = self._get_datas('DT_RECEB')
+        df_datas = pd.DataFrame(list(datas.items()), columns = ['TICKER', 'data'])
+
+        df = df_datas.merge(df_selic, how='outer')
+        df = df.sort_values(by='data')
+        df['valor'] = df['valor'].fillna(method = 'ffill')
+
+        df = df.dropna(subset = ['TICKER'])[['TICKER', 'valor']].rename(columns = {'valor': 'tx_selic'})
+        self.df_features = self.df_features.merge(df, how = 'left')
         
         
     def set_resultado_hist(self, dias, campo = 'DT_RECEB'):
